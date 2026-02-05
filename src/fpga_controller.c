@@ -97,6 +97,7 @@ bool controllerOutOfTreeTest(void) {
 }
 static uint8_t rxBuffer[64] = {0};
 static uint8_t txBuffer[64] = {0};
+static uint8_t runTimes = 0;
 
 void controllerOutOfTree(control_t *control,
                          const setpoint_t *setpoint,
@@ -106,9 +107,12 @@ void controllerOutOfTree(control_t *control,
     if(!fpgaControllerInitialized) {
         return;
     }
+    if(runTimes > 3) {
+        return;
+    }
+    runTimes++;
   
     DEBUG_PRINT("FPGA OOTOOTOOTOOTOOTOOTOOTOOTOOT\n");
-    fpgaControllerInitialized = false;
 
 
     for(int i = 0; i < 50000; i++) {
@@ -148,9 +152,24 @@ bool ready = false;
     }
 
     digitalWrite(FPGA_CS_PIN, HIGH);
+    sleepus(10);
+    digitalWrite(FPGA_CS_PIN, LOW);
 
-    fpgaControllerInitialized = false;
-    return;
+    txBuffer[0] = 0x00;
+    txBuffer[1] = 0x00;
+    txBuffer[2] = 0xAA; 
+    // State words (24-bit, LSB first)
+    for (int i = 0; i < 12; i++) {
+        txBuffer[3 + 3*i + 0] = 0x00;
+        txBuffer[3 + 3*i + 1] = 0xBB;
+        txBuffer[3 + 3*i + 2] = 0x03;
+    }
+    // for (int i = 0; i < 64; i++) {
+    //     DEBUG_PRINT("  TX[%d] = 0x%02X\n", i, txBuffer[i]);
+    // }
+    spiExchange(39, txBuffer, rxBuffer);
+    DEBUG_PRINT("SENT\n");
+
 
 
     // if(RATE_DO_EXECUTE((RATE_100_HZ/100), tick)) {
