@@ -88,8 +88,28 @@ void controllerOutOfTreeInit(void) {
     spiExchange(39, txBuffer, rxBuffer);
     DEBUG_PRINT("SENT\n");
 
+    fpgaControllerInitialized = true;   
+    // sleepus(10000000);
+}
 
-    txBuffer[0] = 0x00;
+bool controllerOutOfTreeTest(void) {
+    return true;
+}
+static uint8_t rxBuffer[64] = {0};
+static uint8_t txBuffer[64] = {0};
+
+void controllerOutOfTree(control_t *control,
+                         const setpoint_t *setpoint,
+                         const sensorData_t *sensors,
+                         const state_t *state,
+                         const uint32_t tick) {
+    if(!fpgaControllerInitialized) {
+        return;
+    }
+  
+    DEBUG_PRINT("FPGA OOTOOTOOTOOTOOTOOTOOTOOTOOT\n");
+    fpgaControllerInitialized = false;
+
 
     for(int i = 0; i < 50000; i++) {
 
@@ -101,6 +121,7 @@ void controllerOutOfTreeInit(void) {
         // DEBUG_PRINT("  Dummy SPI byte %d, RX = 0x%02X\n", i, rxBuffer[0]);
         // sleepus(10);
     }
+    DEBUG_PRINT("we managed to break!\n");
 bool ready = false;
     for(int i = 0; i < 1000; i++) {
        spiExchange(1, txBuffer, rxBuffer);
@@ -127,24 +148,10 @@ bool ready = false;
     }
 
     digitalWrite(FPGA_CS_PIN, HIGH);
-    spiEndTransaction();
-    fpgaControllerInitialized = true;   
-    // sleepus(10000000);
-}
 
-bool controllerOutOfTreeTest(void) {
-    return true;
-}
+    fpgaControllerInitialized = false;
+    return;
 
-void controllerOutOfTree(control_t *control,
-                         const setpoint_t *setpoint,
-                         const sensorData_t *sensors,
-                         const state_t *state,
-                         const uint32_t tick) {
-                            return;
-    if(!fpgaControllerInitialized) {
-        return;
-    }
 
     // if(RATE_DO_EXECUTE((RATE_100_HZ/100), tick)) {
     //     DEBUG_PRINT("FPGA out-of-tree controller transaction...\n");
