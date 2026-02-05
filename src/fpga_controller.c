@@ -29,7 +29,7 @@
 // Hardware pins
 #define FPGA_CS_PIN       DECK_GPIO_IO1
 #define FPGA_IRQ_PIN      DECK_GPIO_IO2
-#define FPGA_SPI_BAUDRATE SPI_BAUDRATE_2MHZ
+#define FPGA_SPI_BAUDRATE SPI_BAUDRATE_12MHZ
 
 
 static bool fpgaControllerInitialized = false;
@@ -92,39 +92,41 @@ void controllerOutOfTreeInit(void) {
     txBuffer[0] = 0x00;
 
     for(int i = 0; i < 50000; i++) {
-       
-        spiExchange(1, txBuffer, rxBuffer);
-        if(rxBuffer[0] != 0x00) {
-            DEBUG_PRINT("  Dummy SPI byte %d, RX = 0x%02X\n", i, rxBuffer[0]);
-            break;
-        }
+
         if(digitalRead(FPGA_IRQ_PIN) == HIGH) {
-            DEBUG_PRINT("  Dummy SPI byte %d, FPGA IRQ went HIGH!\n", i);
+            DEBUG_PRINT("  cycle %d, FPGA IRQ went HIGH!\n", i);
             break;
         }
         
         // DEBUG_PRINT("  Dummy SPI byte %d, RX = 0x%02X\n", i, rxBuffer[0]);
         // sleepus(10);
     }
+bool ready = false;
+    for(int i = 0; i < 1000; i++) {
+       spiExchange(1, txBuffer, rxBuffer);
+        if(rxBuffer[0] == 0xFF) {
+            DEBUG_PRINT("  Dummy SPI byte %d, RX = 0x%02X\n", i, rxBuffer[0]);
+            ready = true;
+            break;
+        }
+    }
+    if(!ready) {
+        DEBUG_PRINT("  FPGA DUMMY NOT 0xFF timeout - no data received\n");
+    } else {
+        DEBUG_PRINT("  FPGA 0xFF received!\n");
+    }
 
-    // volatile int count = 0;
-    // while(digitalRead(FPGA_IRQ_PIN) == LOW) { 
-    //     if(count > 10000) {
-    //         DEBUG_PRINT("  FPGA IRQ wait timeout!\n");
-    //         break;
-    //     }
-    //     count++;
+    for(int i = 0; i < 64; i++) {
+        txBuffer[i] = 0x00;
+    }
 
-    // }
-    // DEBUG_PRINT("  FPGA IRQ waited cycles: %d\n", count);
+    spiExchange(17, txBuffer, rxBuffer);
 
-    spiExchange(15, txBuffer, rxBuffer);
-
-    for(volatile int i = 0; i < 15; i++) {
+    for(volatile int i = 0; i < 17; i++) {
         DEBUG_PRINT("  RX[%d] = 0x%02X\n", i, rxBuffer[i]);
     }
 
-    // digitalWrite(FPGA_CS_PIN, HIGH);
+    digitalWrite(FPGA_CS_PIN, HIGH);
     spiEndTransaction();
     fpgaControllerInitialized = true;   
     // sleepus(10000000);
