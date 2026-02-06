@@ -78,7 +78,7 @@ void controllerOutOfTreeInit(void) {
     txBuffer[2] = 0xAA; 
     // State words (24-bit, LSB first)
     for (int i = 0; i < 12; i++) {
-        txBuffer[3 + 3*i + 0] = 0x00;
+        txBuffer[3 + 3*i + 0] = 0xFF;
         txBuffer[3 + 3*i + 1] = 0xBB;
         txBuffer[3 + 3*i + 2] = 0x03;
     }
@@ -96,6 +96,7 @@ bool controllerOutOfTreeTest(void) {
     return true;
 }
 static uint8_t rxBuffer[64] = {0};
+static uint8_t rxBuffer2[64] = {0};
 static uint8_t txBuffer[64] = {0};
 static uint8_t runTimes = 0;
 
@@ -107,49 +108,47 @@ void controllerOutOfTree(control_t *control,
     if(!fpgaControllerInitialized) {
         return;
     }
-    if(runTimes > 3) {
+    if(runTimes > 30) {
         return;
     }
     runTimes++;
   
-    DEBUG_PRINT("FPGA OOTOOTOOTOOTOOTOOTOOTOOTOOT\n");
+    uint64_t start = usecTimestamp();
+    // DEBUG_PRINT("FPGA OOTOOTOOTOOTOOTOOTOOTOOTOOT\n");
 
 
     for(int i = 0; i < 50000; i++) {
 
         if(digitalRead(FPGA_IRQ_PIN) == HIGH) {
-            DEBUG_PRINT("  cycle %d, FPGA IRQ went HIGH!\n", i);
+            // DEBUG_PRINT("  cycle %d, FPGA IRQ went HIGH!\n", i);
             break;
         }
         
         // DEBUG_PRINT("  Dummy SPI byte %d, RX = 0x%02X\n", i, rxBuffer[0]);
         // sleepus(10);
     }
-    DEBUG_PRINT("we managed to break!\n");
+    // DEBUG_PRINT("we managed to break!\n");
 bool ready = false;
     for(int i = 0; i < 1000; i++) {
        spiExchange(1, txBuffer, rxBuffer);
         if(rxBuffer[0] == 0xFF) {
-            DEBUG_PRINT("  Dummy SPI byte %d, RX = 0x%02X\n", i, rxBuffer[0]);
+            // DEBUG_PRINT("  Dummy SPI byte %d, RX = 0x%02X\n", i, rxBuffer[0]);
             ready = true;
             break;
         }
     }
     if(!ready) {
-        DEBUG_PRINT("  FPGA DUMMY NOT 0xFF timeout - no data received\n");
+        // DEBUG_PRINT("  FPGA DUMMY NOT 0xFF timeout - no data received\n");
     } else {
-        DEBUG_PRINT("  FPGA 0xFF received!\n");
+        // DEBUG_PRINT("  FPGA 0xFF received!\n");
     }
 
     for(int i = 0; i < 64; i++) {
         txBuffer[i] = 0x00;
     }
 
-    spiExchange(17, txBuffer, rxBuffer);
+    spiExchange(14, txBuffer, rxBuffer);
 
-    for(volatile int i = 0; i < 17; i++) {
-        DEBUG_PRINT("  RX[%d] = 0x%02X\n", i, rxBuffer[i]);
-    }
 
     digitalWrite(FPGA_CS_PIN, HIGH);
     sleepus(10);
@@ -160,18 +159,23 @@ bool ready = false;
     txBuffer[2] = 0xAA; 
     // State words (24-bit, LSB first)
     for (int i = 0; i < 12; i++) {
-        txBuffer[3 + 3*i + 0] = 0x00;
+        txBuffer[3 + 3*i + 0] = (runTimes + i) & 0xFF;
         txBuffer[3 + 3*i + 1] = 0xBB;
         txBuffer[3 + 3*i + 2] = 0x03;
     }
     // for (int i = 0; i < 64; i++) {
     //     DEBUG_PRINT("  TX[%d] = 0x%02X\n", i, txBuffer[i]);
     // }
-    spiExchange(39, txBuffer, rxBuffer);
+    spiExchange(39, txBuffer, rxBuffer2);
+
+    uint64_t end = usecTimestamp();
     DEBUG_PRINT("SENT\n");
+    DEBUG_PRINT("TIME: %lld us\n", end - start);
 
 
-
+    for(volatile int i = 0; i < 14; i++) {
+        DEBUG_PRINT("  RX[%d] = 0x%02X\n", i, rxBuffer[i]);
+    }
     // if(RATE_DO_EXECUTE((RATE_100_HZ/100), tick)) {
     //     DEBUG_PRINT("FPGA out-of-tree controller transaction...\n");
         
