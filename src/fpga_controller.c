@@ -48,7 +48,7 @@ static uint8_t txBuffer[TX_LEN] = {0};
 static uint8_t rxBuffer[RX_LEN] = {0};
 static uint8_t dummyBuffer[RX_LEN] = {0};
 
-static uint8_t runTimes = 0;
+static uint64_t runTimes = 0;
 
 #include "math3d.h"
 // #ifndef M_PI_F
@@ -161,25 +161,25 @@ void stateToTxBuffer(const state_t *state, const sensorData_t *sensors, uint8_t 
 
     // ToDo difference from setpoint
 
-    struct vec phi = quat_2_rp(normalize_quat(state->attitudeQuaternion)); // quaternion to Rodrigues parameters
-    DEBUG_PRINT("phi: (%.2f, %.2f, %.2f)\n", (double)phi.x, (double)phi.y, (double)phi.z);
+    // struct vec phi = quat_2_rp(normalize_quat(state->attitudeQuaternion)); // quaternion to Rodrigues parameters
+    // DEBUG_PRINT("phi: (%.2f, %.2f, %.2f)\n", (double)phi.x, (double)phi.y, (double)phi.z);
 
     buffer[0] = 0x00;
     buffer[1] = 0x00;
     buffer[2] = 0xAA;
 
-    float_to_24bit_fixed_at(state->position.x, buffer, 3);
-    float_to_24bit_fixed_at(state->position.y, buffer, 6);
-    float_to_24bit_fixed_at(state->position.z - 1, buffer, 9); // ToDo tmp hover at 1m height
-    float_to_24bit_fixed_at(phi.x, buffer, 12);
-    float_to_24bit_fixed_at(phi.y, buffer, 15);
-    float_to_24bit_fixed_at(phi.z, buffer, 18);
-    float_to_24bit_fixed_at(state->velocity.x, buffer, 21);
-    float_to_24bit_fixed_at(state->velocity.y, buffer, 24);
-    float_to_24bit_fixed_at(state->velocity.z, buffer, 27);
-    float_to_24bit_fixed_at(radians(sensors->gyro.x), buffer, 30);
-    float_to_24bit_fixed_at(radians(sensors->gyro.y), buffer, 33);
-    float_to_24bit_fixed_at(radians(sensors->gyro.z), buffer, 36);
+    float_to_24bit_fixed_at(0 /*state->position.x */, buffer, 3);
+    float_to_24bit_fixed_at(0 /*state->position.y */, buffer, 6);
+    float_to_24bit_fixed_at(0 /*state->position.z - 1*/, buffer, 9); // ToDo  tmp hover at 1m height
+    float_to_24bit_fixed_at(0 /*phi.x */, buffer, 12);
+    float_to_24bit_fixed_at(0 /*phi.y */, buffer, 15);
+    float_to_24bit_fixed_at(0 /*phi.z */, buffer, 18);
+    float_to_24bit_fixed_at(0 /*state->velocity.x */, buffer, 21);
+    float_to_24bit_fixed_at(0 /*state->velocity.y */, buffer, 24);
+    float_to_24bit_fixed_at(0 /*state->velocity.z */, buffer, 27);
+    float_to_24bit_fixed_at(0 /*radians(sensors->gyro.x )*/, buffer, 30);
+    float_to_24bit_fixed_at(0 /*radians(sensors->gyro.y )*/, buffer, 33);
+    float_to_24bit_fixed_at(0 /*radians(sensors->gyro.z )*/, buffer, 36);
 }
 
 void rxBufferToControl(const uint8_t *buffer, control_t *control) {
@@ -242,9 +242,12 @@ void controllerOutOfTree(control_t *control,
 
     
     // DEBUG_PRINT("TIME: %lld us\n", end - start);
-    // for(volatile int i = 0; i < 14; i++) {
-    //     DEBUG_PRINT("  RX[%d] = 0x%02X\n", i, rxBuffer[i]);
-    // }
+    if(runTimes % 1000 == 0) {
+        DEBUG_PRINT("Received control (run %llu): ", runTimes);
+        for(int i = 0; i < 4; i++) {
+            DEBUG_PRINT("  Force[%d] = %.4f\n", i,(double) control->normalizedForces[i]);
+        }
+    }
 }
 
 //--------------------------------------------------------------
