@@ -19,7 +19,7 @@
 #include "param.h"
 #include "deck.h"
 #include "sleepus.h"
-
+#include "math3d.h"
 #include "param_logic.h"
 
 //--------------------------------------------------------------
@@ -50,16 +50,6 @@ static uint8_t txBuffer[TX_LEN] = {0};
 static uint8_t dummyBuffer[RX_LEN] = {0};
 
 static uint64_t runTimes = 0;
-
-#include "math3d.h"
-// #ifndef M_PI_F
-//   #define M_PI_F   (3.14159265358979323846f)
-// #endif
-// struct vec {
-// 	float x; float y; float z;
-// };
-// static inline float radians(float degrees) { return (M_PI_F / 180.0f) * degrees; }
-
 
 void appMain() {
     DEBUG_PRINT("FPGA Controller app started.\n");
@@ -198,9 +188,6 @@ void controllerOutOfTree(control_t *control,
                          const sensorData_t *sensors,
                          const state_t *state,
                          const uint32_t tick) {
-    if(!RATE_DO_EXECUTE(RATE_25_HZ, tick)) {
-        return;
-    }
     if(!fpgaControllerInitialized) {
         return;
     }
@@ -220,19 +207,9 @@ void controllerOutOfTree(control_t *control,
 
     for(int i = 0; i < 1000; i++) {
         spiExchange(1, emptyBuffer, rxBuffer);
-        if(rxBuffer[0] == 0xFF) {
-            // DE   BUG_PRINT("rec FF %d\n", i);
-            // for(int j = 1; j < 500; j++) {
-            //     spiExchange(1, emptyBuffer, rxBuffer);
-            //     if(rxBuffer[0] == 0x00) {
-            //         DEBUG_PRINT("rec 0 %d\n", j);
-            //         break;
-
-            //     }
-            // }
-            break;
-            
-            
+        if(rxBuffer[0] == 0xFF) 
+        {
+            break;    
         }
     }
     /* Consume the remaining 3 bytes of the 32-bit ready word (0xFF 0xFF 0xFF 0xFF) */
@@ -241,32 +218,23 @@ void controllerOutOfTree(control_t *control,
     spiExchange(RX_LEN, emptyBuffer, rxBuffer);
 
     digitalWrite(FPGA_CS_PIN, HIGH);
-    sleepus(10);
+    sleepus(1);
     digitalWrite(FPGA_CS_PIN, LOW);
 
     spiExchange(TX_LEN, txBuffer, dummyBuffer);
 
     // uint64_t end = usecTimestamp();
 
-
-    // if(runTimes < 200) {
-    //     DEBUG_PRINT("(run %llu): ", runTimes);
-    //     for(int i = 0; i < RX_LEN; i++) {
-    //         DEBUG_PRINT("0x%02X ", rxBuffer[i]);
-    //     }
-    //     DEBUG_PRINT("\n\n");
-    // }
-
     rxBufferToControl(rxBuffer, control);
 
     
-    // DEBUG_PRINT("TIME: %lld us\n", end - start);
-    if(runTimes < 200) {
-        DEBUG_PRINT("Received control (run %llu): ", runTimes);
-        for(int i = 0; i < (RX_LEN / 4); i++) {
-            DEBUG_PRINT("  Force[%d] = %.4f %02X %02X %02X %02X \n", i,(double)fixed_32bit_to_float_at(rxBuffer, 4*i) , rxBuffer[4*i], rxBuffer[4*i+1], rxBuffer[4*i+2], rxBuffer[4*i+3]);
-        }
-    }
+    // if(runTimes < 200) {
+    //     DEBUG_PRINT("TIME: %lld us\n", end - start);
+    //     DEBUG_PRINT("Received control (run %llu): ", runTimes);
+    //     for(int i = 0; i < (RX_LEN / 4); i++) {
+    //         DEBUG_PRINT("  Force[%d] = %.4f %02X %02X %02X %02X \n", i,(double)fixed_32bit_to_float_at(rxBuffer, 4*i) , rxBuffer[4*i], rxBuffer[4*i+1], rxBuffer[4*i+2], rxBuffer[4*i+3]);
+    //     }
+    // }
 }
 
 //--------------------------------------------------------------
