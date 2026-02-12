@@ -31,21 +31,22 @@
 #define FPGA_IRQ_PIN      DECK_GPIO_IO2
 #define FPGA_SPI_BAUDRATE SPI_BAUDRATE_12MHZ
 
-#define TX_LEN 39
-#define RX_LEN 14
+/* 4-byte header + 12 state words × 4 bytes */
+#define TX_LEN  (4 + 12 * 4)
+/* 4 control outputs × 4 bytes */
+#define RX_LEN  (4 * 4)
 
 
 #define FRAC_BITS 22
 #define SCALE     (1 << FRAC_BITS)
 
-/* 24-bit signed range for Q2.22: about -2.0 to +2.0 */
-#define FP24_MIN  (-(1 << 23))
-#define FP24_MAX  ((1 << 23) - 1)
+/* 32-bit signed range for Q10.22: full int32 range (~ -1024 to +1024 in value) */
+#define FP32_MIN  INT32_MIN
+#define FP32_MAX  INT32_MAX
 
 static bool fpgaControllerInitialized = false;
 static uint8_t emptyBuffer[TX_LEN] = {0};
 static uint8_t txBuffer[TX_LEN] = {0};
-static uint8_t rxBuffer[RX_LEN] = {0};
 static uint8_t dummyBuffer[RX_LEN] = {0};
 
 static uint64_t runTimes = 0;
@@ -71,12 +72,12 @@ void appMain() {
 //--------------------------------------------------------------
 // Out-of-Tree Controller Interface
 //--------------------------------------------------------------
-
-
-
-
-
 void controllerOutOfTreeInit(void) {
+    if(fpgaControllerInitialized) {
+        DEBUG_PRINT("FPGA out-of-tree controller already initialized, skipping.\n");
+        return;
+    }
+    
     DEBUG_PRINT("FPGA out-of-tree controller init...\n");
     
     pinMode(FPGA_CS_PIN, OUTPUT);
@@ -93,7 +94,7 @@ void controllerOutOfTreeInit(void) {
     
     digitalWrite(FPGA_CS_PIN, LOW);
 
-    uint8_t localTxBuffer[TX_LEN] = {0}; localTxBuffer[2] = 0xAA; 
+    uint8_t localTxBuffer[TX_LEN] = {0}; localTxBuffer[3] = 0xAA; 
     uint8_t localRxBuffer[TX_LEN];
 
     spiExchange(TX_LEN, localTxBuffer, localRxBuffer);
@@ -105,6 +106,7 @@ void controllerOutOfTreeInit(void) {
 bool controllerOutOfTreeTest(void) {
     return true;
 }
+
 static inline quaternion_t normalize_quat(quaternion_t q)
 {
     float inv_mag = 1.0f / sqrtf(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w);
@@ -125,36 +127,36 @@ static inline struct vec quat_2_rp(quaternion_t q)
   return v;
 }
 
-void float_to_24bit_fixed_at(float value, uint8_t *buf, size_t offset)
+void float_to_32bit_fixed_at(float value, uint8_t *buf, size_t offset)
 {
     double scaled = (double)value * (double)SCALE;
-    int32_t fp24;
+    int32_t fp32;
 
-    if (scaled <= (double)FP24_MIN) {
-        fp24 = FP24_MIN;
-    } else if (scaled >= (double)FP24_MAX) {
-        fp24 = FP24_MAX;
+    if (scaled <= (double)FP32_MIN) {
+        fp32 = FP32_MIN;
+    } else if (scaled >= (double)FP32_MAX) {
+        fp32 = FP32_MAX;
     } else {
-        fp24 = (int32_t)(scaled < 0 ? scaled - 0.5 : scaled + 0.5);
+        fp32 = (int32_t)(scaled < 0 ? scaled - 0.5 : scaled + 0.5);
     }
 
-    uint32_t u = (uint32_t)fp24 & 0xFFFFFFu;
-    buf[offset + 0] = (uint8_t)(u >> 0);
-    buf[offset + 1] = (uint8_t)(u >> 8);
-    buf[offset + 2] = (uint8_t)(u >> 16);
+    uint32_t u = (uint32_t)fp32;
+    buf[offset + 0] = (uint8_t)(u >> 24);
+    buf[offset + 1] = (uint8_t)(u >> 16);
+    buf[offset + 2] = (uint8_t)(u >>  8);
+    buf[offset + 3] = (uint8_t)(u >>  0);
 }
 
-float fixed_24bit_to_float_at(const uint8_t *buf, size_t offset)
+float fixed_32bit_to_float_at(const uint8_t *buf, size_t offset)
 {
-    /* Assemble 24-bit value: first byte = MSB (bits 16–23), same as receive_val_24bit_from_buf */
-    uint32_t u24 = ((uint32_t)buf[offset]     << 16)
-                 | ((uint32_t)buf[offset + 1] << 8)
-                 | ((uint32_t)buf[offset + 2] << 0);
+    /* 32-bit little-endian */
+    uint32_t u32 = ((uint32_t)buf[offset]     << 24)
+                 | ((uint32_t)buf[offset + 1] << 16)
+                 | ((uint32_t)buf[offset + 2] <<  8)
+                 | ((uint32_t)buf[offset + 3] <<  0);
 
-    /* Sign-extend from bit 23 to 32 bits */
-    int32_t s24 = (int32_t)((u24 << 8) >> 8);
-
-    return (float)s24 * (1.0f / (float)SCALE);
+    int32_t s32 = (int32_t)u32;
+    return (float)s32 * (1.0f / (float)SCALE);
 }
 
 void stateToTxBuffer(const state_t *state, const sensorData_t *sensors, uint8_t *buffer) {
@@ -166,28 +168,29 @@ void stateToTxBuffer(const state_t *state, const sensorData_t *sensors, uint8_t 
 
     buffer[0] = 0x00;
     buffer[1] = 0x00;
-    buffer[2] = 0xAA;
+    buffer[2] = 0x00;
+    buffer[3] = 0xAA;
 
-    float_to_24bit_fixed_at(0 /*state->position.x */, buffer, 3);
-    float_to_24bit_fixed_at(0 /*state->position.y */, buffer, 6);
-    float_to_24bit_fixed_at(0 /*state->position.z - 1*/, buffer, 9); // ToDo  tmp hover at 1m height
-    float_to_24bit_fixed_at(0 /*phi.x */, buffer, 12);
-    float_to_24bit_fixed_at(0 /*phi.y */, buffer, 15);
-    float_to_24bit_fixed_at(0 /*phi.z */, buffer, 18);
-    float_to_24bit_fixed_at(0 /*state->velocity.x */, buffer, 21);
-    float_to_24bit_fixed_at(0 /*state->velocity.y */, buffer, 24);
-    float_to_24bit_fixed_at(0 /*state->velocity.z */, buffer, 27);
-    float_to_24bit_fixed_at(0 /*radians(sensors->gyro.x )*/, buffer, 30);
-    float_to_24bit_fixed_at(0 /*radians(sensors->gyro.y )*/, buffer, 33);
-    float_to_24bit_fixed_at(0 /*radians(sensors->gyro.z )*/, buffer, 36);
+    float_to_32bit_fixed_at(0.100 /* state->position.x*/, buffer, 4);
+    float_to_32bit_fixed_at(0.0 /* state->position.y*/, buffer, 8);
+    float_to_32bit_fixed_at(0.0 /* state->position.z*/, buffer, 12); // ToDo  tmp hover at 1m height
+    float_to_32bit_fixed_at(0.0 /* phi.x */, buffer, 16);
+    float_to_32bit_fixed_at(0 /* phi.y */, buffer, 20);
+    float_to_32bit_fixed_at(0 /* phi.z */, buffer, 24);
+    float_to_32bit_fixed_at(0 /* state->velocity.x*/, buffer, 28);
+    float_to_32bit_fixed_at(0 /* state->velocity.y*/, buffer, 32);
+    float_to_32bit_fixed_at(0 /* state->velocity.z*/, buffer, 36);
+    float_to_32bit_fixed_at(0 /* radians(sensors->gyro.x)*/, buffer, 40);
+    float_to_32bit_fixed_at(0 /* radians(sensors->gyro.y)*/, buffer, 44);
+    float_to_32bit_fixed_at(0 /* radians(sensors->gyro.z)*/, buffer, 48);
 }
 
 void rxBufferToControl(const uint8_t *buffer, control_t *control) {
     control->controlMode = controlModeForce;
-    control->normalizedForces[0] = fixed_24bit_to_float_at(buffer, 0);
-    control->normalizedForces[1] = fixed_24bit_to_float_at(buffer, 3);
-    control->normalizedForces[2] = fixed_24bit_to_float_at(buffer, 6);
-    control->normalizedForces[3] = fixed_24bit_to_float_at(buffer, 9);
+    control->normalizedForces[0] = fixed_32bit_to_float_at(buffer, 0);
+    control->normalizedForces[1] = fixed_32bit_to_float_at(buffer, 4);
+    control->normalizedForces[2] = fixed_32bit_to_float_at(buffer, 8);
+    control->normalizedForces[3] = fixed_32bit_to_float_at(buffer, 12);
 }
 
 void controllerOutOfTree(control_t *control,
@@ -195,6 +198,9 @@ void controllerOutOfTree(control_t *control,
                          const sensorData_t *sensors,
                          const state_t *state,
                          const uint32_t tick) {
+    if(!RATE_DO_EXECUTE(RATE_25_HZ, tick)) {
+        return;
+    }
     if(!fpgaControllerInitialized) {
         return;
     }
@@ -209,13 +215,28 @@ void controllerOutOfTree(control_t *control,
             break;
         }
     }
+    uint8_t rxBuffer[RX_LEN] = {0};
+
 
     for(int i = 0; i < 1000; i++) {
-       spiExchange(1, emptyBuffer, rxBuffer);
+        spiExchange(1, emptyBuffer, rxBuffer);
         if(rxBuffer[0] == 0xFF) {
+            // DE   BUG_PRINT("rec FF %d\n", i);
+            // for(int j = 1; j < 500; j++) {
+            //     spiExchange(1, emptyBuffer, rxBuffer);
+            //     if(rxBuffer[0] == 0x00) {
+            //         DEBUG_PRINT("rec 0 %d\n", j);
+            //         break;
+
+            //     }
+            // }
             break;
+            
+            
         }
     }
+    /* Consume the remaining 3 bytes of the 32-bit ready word (0xFF 0xFF 0xFF 0xFF) */
+    spiExchange(3, emptyBuffer, dummyBuffer);
 
     spiExchange(RX_LEN, emptyBuffer, rxBuffer);
 
@@ -223,29 +244,27 @@ void controllerOutOfTree(control_t *control,
     sleepus(10);
     digitalWrite(FPGA_CS_PIN, LOW);
 
-    txBuffer[0] = 0x00;
-    txBuffer[1] = 0x00;
-    txBuffer[2] = 0xAA; 
-    // State words (24-bit, LSB first)
-    for (int i = 0; i < 12; i++) {
-        txBuffer[3 + 3*i + 0] = (runTimes + i) & 0xFF;
-        txBuffer[3 + 3*i + 1] = 0xBB;
-        txBuffer[3 + 3*i + 2] = 0x03;
-    }
-
-    spiExchange(39, txBuffer, dummyBuffer);
+    spiExchange(TX_LEN, txBuffer, dummyBuffer);
 
     // uint64_t end = usecTimestamp();
 
+
+    // if(runTimes < 200) {
+    //     DEBUG_PRINT("(run %llu): ", runTimes);
+    //     for(int i = 0; i < RX_LEN; i++) {
+    //         DEBUG_PRINT("0x%02X ", rxBuffer[i]);
+    //     }
+    //     DEBUG_PRINT("\n\n");
+    // }
 
     rxBufferToControl(rxBuffer, control);
 
     
     // DEBUG_PRINT("TIME: %lld us\n", end - start);
-    if(runTimes % 1000 == 0) {
+    if(runTimes < 200) {
         DEBUG_PRINT("Received control (run %llu): ", runTimes);
-        for(int i = 0; i < 4; i++) {
-            DEBUG_PRINT("  Force[%d] = %.4f\n", i,(double) control->normalizedForces[i]);
+        for(int i = 0; i < (RX_LEN / 4); i++) {
+            DEBUG_PRINT("  Force[%d] = %.4f %02X %02X %02X %02X \n", i,(double)fixed_32bit_to_float_at(rxBuffer, 4*i) , rxBuffer[4*i], rxBuffer[4*i+1], rxBuffer[4*i+2], rxBuffer[4*i+3]);
         }
     }
 }
