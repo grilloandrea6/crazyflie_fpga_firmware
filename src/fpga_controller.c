@@ -153,26 +153,26 @@ void stateToTxBuffer(const state_t *state, const sensorData_t *sensors, uint8_t 
 
     // ToDo difference from setpoint
 
-    // struct vec phi = quat_2_rp(normalize_quat(state->attitudeQuaternion)); // quaternion to Rodrigues parameters
+    struct vec phi = quat_2_rp(normalize_quat(state->attitudeQuaternion)); // quaternion to Rodrigues parameters
     // DEBUG_PRINT("phi: (%.2f, %.2f, %.2f)\n", (double)phi.x, (double)phi.y, (double)phi.z);
 
     buffer[0] = 0x00;
     buffer[1] = 0x00;
     buffer[2] = 0x00;
     buffer[3] = 0xAA;
-
-    float_to_32bit_fixed_at(0.100 /* state->position.x*/, buffer, 4);
-    float_to_32bit_fixed_at(0.0 /* state->position.y*/, buffer, 8);
-    float_to_32bit_fixed_at(0.0 /* state->position.z*/, buffer, 12); // ToDo  tmp hover at 1m height
-    float_to_32bit_fixed_at(0.0 /* phi.x */, buffer, 16);
-    float_to_32bit_fixed_at(0 /* phi.y */, buffer, 20);
-    float_to_32bit_fixed_at(0 /* phi.z */, buffer, 24);
-    float_to_32bit_fixed_at(0 /* state->velocity.x*/, buffer, 28);
-    float_to_32bit_fixed_at(0 /* state->velocity.y*/, buffer, 32);
-    float_to_32bit_fixed_at(0 /* state->velocity.z*/, buffer, 36);
-    float_to_32bit_fixed_at(0 /* radians(sensors->gyro.x)*/, buffer, 40);
-    float_to_32bit_fixed_at(0 /* radians(sensors->gyro.y)*/, buffer, 44);
-    float_to_32bit_fixed_at(0 /* radians(sensors->gyro.z)*/, buffer, 48);
+// x=-0.036 y=-0.203 z=0.499
+    float_to_32bit_fixed_at(state->position.x + 0.036f , buffer, 4);
+    float_to_32bit_fixed_at(state->position.y + 0.203f, buffer, 8);
+    float_to_32bit_fixed_at(state->position.z - 0.499f, buffer, 12); // ToDo  tmp hover at 1m height
+    float_to_32bit_fixed_at(phi.x, buffer, 16);
+    float_to_32bit_fixed_at(phi.y, buffer, 20);
+    float_to_32bit_fixed_at(phi.z, buffer, 24);
+    float_to_32bit_fixed_at(state->velocity.x, buffer, 28);
+    float_to_32bit_fixed_at(state->velocity.y, buffer, 32);
+    float_to_32bit_fixed_at(state->velocity.z, buffer, 36);
+    float_to_32bit_fixed_at(radians(sensors->gyro.x), buffer, 40);
+    float_to_32bit_fixed_at(radians(sensors->gyro.y), buffer, 44);
+    float_to_32bit_fixed_at(radians(sensors->gyro.z), buffer, 48);
 }
 
 void rxBufferToControl(const uint8_t *buffer, control_t *control) {
