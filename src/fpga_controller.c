@@ -15,6 +15,7 @@
 #include "debug.h"
 
 #include "controller.h"
+#include "controller_pid.h"
 #include "log.h"
 #include "param.h"
 #include "deck.h"
@@ -90,6 +91,8 @@ void controllerOutOfTreeInit(void) {
     spiExchange(TX_LEN, localTxBuffer, localRxBuffer);
     DEBUG_PRINT("Dummy transaction sent.\n");
 
+    controllerPidInit();
+
     fpgaControllerInitialized = true;   
 }
 
@@ -149,7 +152,7 @@ float fixed_32bit_to_float_at(const uint8_t *buf, size_t offset)
     return (float)s32 * (1.0f / (float)SCALE);
 }
 
-void stateToTxBuffer(const state_t *state, const sensorData_t *sensors, uint8_t *buffer) {
+void stateToTxBuffer(const setpoint_t *setpoint, const state_t *state, const sensorData_t *sensors, uint8_t *buffer) {
 
     // ToDo difference from setpoint
 
@@ -160,10 +163,12 @@ void stateToTxBuffer(const state_t *state, const sensorData_t *sensors, uint8_t 
     buffer[1] = 0x00;
     buffer[2] = 0x00;
     buffer[3] = 0xAA;
+
+    
 // x=-0.036 y=-0.203 z=0.499
-    float_to_32bit_fixed_at(state->position.x + 0.036f , buffer, 4);
-    float_to_32bit_fixed_at(state->position.y + 0.203f, buffer, 8);
-    float_to_32bit_fixed_at(state->position.z - 0.499f, buffer, 12); // ToDo  tmp hover at 1m height
+    float_to_32bit_fixed_at(state->position.x - setpoint->position.x, buffer, 4);
+    float_to_32bit_fixed_at(state->position.y - setpoint->position.y, buffer, 8);
+    float_to_32bit_fixed_at(state->position.z - setpoint->position.z, buffer, 12); // ToDo  tmp hover at 1m height
     float_to_32bit_fixed_at(phi.x, buffer, 16);
     float_to_32bit_fixed_at(phi.y, buffer, 20);
     float_to_32bit_fixed_at(phi.z, buffer, 24);
@@ -177,10 +182,10 @@ void stateToTxBuffer(const state_t *state, const sensorData_t *sensors, uint8_t 
 
 void rxBufferToControl(const uint8_t *buffer, control_t *control) {
     control->controlMode = controlModeForce;
-    control->normalizedForces[0] = fixed_32bit_to_float_at(buffer, 0);
-    control->normalizedForces[1] = fixed_32bit_to_float_at(buffer, 4);
-    control->normalizedForces[2] = fixed_32bit_to_float_at(buffer, 8);
-    control->normalizedForces[3] = fixed_32bit_to_float_at(buffer, 12);
+    control->normalizedForces[0] = 0.58333335f + fixed_32bit_to_float_at(buffer, 0);
+    control->normalizedForces[1] = 0.58333335f + fixed_32bit_to_float_at(buffer, 4);
+    control->normalizedForces[2] = 0.58333335f + fixed_32bit_to_float_at(buffer, 8);
+    control->normalizedForces[3] = 0.58333335f + fixed_32bit_to_float_at(buffer, 12);
 }
 
 void controllerOutOfTree(control_t *control,
@@ -193,7 +198,7 @@ void controllerOutOfTree(control_t *control,
     }
     runTimes++;
 
-    stateToTxBuffer(state, sensors, txBuffer);
+    stateToTxBuffer(setpoint, state, sensors, txBuffer);
   
     // uint64_t start = usecTimestamp();
 
@@ -226,6 +231,8 @@ void controllerOutOfTree(control_t *control,
     // uint64_t end = usecTimestamp();
 
     rxBufferToControl(rxBuffer, control);
+
+    if(runTimes < 500) controllerPid(control, setpoint, sensors, state, tick);
 
     
     // if(runTimes < 200) {
